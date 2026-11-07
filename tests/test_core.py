@@ -4,10 +4,21 @@ import unittest
 from contextlib import redirect_stdout
 from unittest.mock import patch
 
-from primitive_db.core import create_table, delete, drop_table, insert, select, update
+from primitive_db.core import (
+    clear_select_cache,
+    create_table,
+    delete,
+    drop_table,
+    insert,
+    select,
+    update,
+)
 
 
 class TableTests(unittest.TestCase):
+    def setUp(self):
+        self.enterContext(patch("builtins.input", return_value="y"))
+
     def test_create_adds_id_without_changing_the_input_columns(self):
         metadata = {}
         columns = ["name:str", "age:int", "is_active:bool"]
@@ -44,9 +55,9 @@ class TableTests(unittest.TestCase):
                 output = io.StringIO()
                 with redirect_stdout(output):
                     result = create_table(metadata, "users", columns)
-                self.assertIs(result, metadata)
+                self.assertIsNone(result)
                 self.assertEqual(metadata, original)
-                self.assertIn("Некорректное значение:", output.getvalue())
+                self.assertIn("Ошибка валидации:", output.getvalue())
 
     def test_empty_table_names_are_rejected(self):
         for table_name in ("", "   "):
@@ -62,7 +73,9 @@ class TableTests(unittest.TestCase):
         with redirect_stdout(output):
             create_table(metadata, "users", ["age:int"])
         self.assertEqual(metadata["users"], ["ID:int", "name:str"])
-        self.assertEqual(output.getvalue(), 'Ошибка: Таблица "users" уже существует.\n')
+        self.assertEqual(
+            output.getvalue(), 'Ошибка валидации: Таблица "users" уже существует.\n'
+        )
 
     def test_names_are_case_sensitive(self):
         metadata = {}
@@ -82,15 +95,18 @@ class TableTests(unittest.TestCase):
         metadata = {"users": ["ID:int"]}
         output = io.StringIO()
         with redirect_stdout(output):
-            self.assertIs(drop_table(metadata, "products"), metadata)
+            self.assertIsNone(drop_table(metadata, "products"))
         self.assertEqual(metadata, {"users": ["ID:int"]})
         self.assertEqual(
-            output.getvalue(), 'Ошибка: Таблица "products" не существует.\n'
+            output.getvalue(), "Ошибка: Таблица или столбец 'products' не найден.\n"
         )
 
 
 class CrudTests(unittest.TestCase):
     def setUp(self):
+        self.enterContext(patch("builtins.input", return_value="y"))
+        self.enterContext(redirect_stdout(io.StringIO()))
+        clear_select_cache()
         self.metadata = {"users": ["ID:int", "name:str", "age:int", "is_active:bool"]}
         self.rows = [
             {"ID": 1, "name": "Sergei", "age": 28, "is_active": True},
@@ -127,17 +143,17 @@ class CrudTests(unittest.TestCase):
             [1, "Sergei", 28, True],
             ["Sergei", None, True],
         ):
-            with self.subTest(values=values), self.assertRaises(ValueError):
-                insert(self.metadata, "users", values, self.rows)
+            with self.subTest(values=values):
+                self.assertIsNone(insert(self.metadata, "users", values, self.rows))
             self.assertEqual(self.rows, self.original)
 
     def test_missing_table_is_rejected(self):
-        with self.assertRaises(ValueError):
-            insert(self.metadata, "missing", [], [])
+        self.assertIsNone(insert(self.metadata, "missing", [], []))
 
     def test_invalid_existing_rows_are_rejected(self):
-        with self.assertRaises(ValueError):
+        self.assertIsNone(
             insert(self.metadata, "users", ["Nina", 30, True], [{"ID": True}])
+        )
 
     def test_select_all_and_exact_type_equality(self):
         result = select(self.rows)
@@ -155,8 +171,7 @@ class CrudTests(unittest.TestCase):
         self.assertEqual(update(self.rows, {"age": 29}, {"ID": 100}), self.rows)
 
     def test_id_is_read_only(self):
-        with self.assertRaises(ValueError):
-            update(self.rows, {"ID": 2}, {"ID": 1})
+        self.assertIsNone(update(self.rows, {"ID": 2}, {"ID": 1}))
         self.assertEqual(self.rows, self.original)
 
     def test_delete_changes_all_matches_without_mutation(self):

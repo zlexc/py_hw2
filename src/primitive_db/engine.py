@@ -3,7 +3,17 @@ import shlex
 import prompt
 from prettytable import PrettyTable
 
-from primitive_db.core import create_table, delete, drop_table, insert, select, update
+from primitive_db.core import (
+    clear_select_cache,
+    create_table,
+    delete,
+    drop_table,
+    insert,
+    matching_rows,
+    select,
+    update,
+)
+from primitive_db.decorators import handle_db_errors
 from primitive_db.parser import parse_command
 from primitive_db.schema import column_types, validate_clause, validate_table_data
 from primitive_db.utils import (
@@ -39,12 +49,15 @@ def print_help():
 
 def _execute_table_command(metadata, command, arguments):
     table_name = arguments[0]
+    if command == "drop_table" and table_name not in metadata:
+        print(f'Ошибка: Таблица "{table_name}" не существует.')
+        return 0
     previous_metadata = metadata.copy()
     if command == "create_table":
-        create_table(metadata, table_name, arguments[1:])
+        result = create_table(metadata, table_name, arguments[1:])
     else:
-        drop_table(metadata, table_name)
-    if metadata == previous_metadata:
+        result = drop_table(metadata, table_name)
+    if result is None or metadata == previous_metadata:
         return 0
 
     try:
@@ -61,12 +74,23 @@ def _execute_table_command(metadata, command, arguments):
         print(f"Ошибка: не удалось сохранить метаданные или данные таблицы: {error}")
         return 1
 
+    clear_select_cache()
     if command == "create_table":
         columns = ", ".join(metadata[table_name])
         print(f'Таблица "{table_name}" успешно создана со столбцами: {columns}')
     else:
         print(f'Таблица "{table_name}" успешно удалена.')
     return 0
+
+
+@handle_db_errors
+def _validate_data_clauses(columns, parsed):
+    where_clause = parsed.get("where_clause")
+    if where_clause is not None:
+        validate_clause(columns, where_clause)
+    if parsed["command"] == "update":
+        validate_clause(columns, parsed["set_clause"], allow_id=False)
+    return True
 
 
 def _execute_data_command(metadata, parsed):
@@ -77,13 +101,7 @@ def _execute_data_command(metadata, parsed):
         return 0
     columns = metadata[table_name]
     where_clause = parsed.get("where_clause")
-    try:
-        if where_clause is not None:
-            validate_clause(columns, where_clause)
-        if command == "update":
-            validate_clause(columns, parsed["set_clause"], allow_id=False)
-    except ValueError as error:
-        print(f"Некорректное значение: {error}. Попробуйте снова.")
+    if _validate_data_clauses(columns, parsed) is None:
         return 0
 
     try:
@@ -99,22 +117,26 @@ def _execute_data_command(metadata, parsed):
         print(f"Количество записей: {len(table_data)}")
         return 0
     if command == "select":
+        rows = select(table_data, where_clause)
+        if rows is None:
+            return 0
         table = PrettyTable(field_names=list(column_types(columns)))
-        for row in select(table_data, where_clause):
+        for row in rows:
             table.add_row([row[name] for name in table.field_names])
         print(table)
         return 0
 
-    matching_rows = select(table_data, where_clause)
-    try:
-        if command == "insert":
-            result = insert(metadata, table_name, parsed["values"], table_data)
-        elif command == "update":
-            result = update(table_data, parsed["set_clause"], where_clause)
-        else:
-            result = delete(table_data, where_clause)
-    except ValueError as error:
-        print(f"Некорректное значение: {error}. Попробуйте снова.")
+    matches = matching_rows(table_data, where_clause) if command != "insert" else []
+    if command in {"update", "delete"} and not matches:
+        print("Подходящие записи не найдены.")
+        return 0
+    if command == "insert":
+        result = insert(metadata, table_name, parsed["values"], table_data)
+    elif command == "update":
+        result = update(table_data, parsed["set_clause"], where_clause)
+    else:
+        result = delete(table_data, where_clause)
+    if result is None:
         return 0
 
     if result != table_data:
@@ -125,14 +147,13 @@ def _execute_data_command(metadata, parsed):
                 f'Ошибка: не удалось сохранить данные таблицы "{table_name}": {error}'
             )
             return 1
+        clear_select_cache()
 
     if command == "insert":
         record_id = result[-1]["ID"]
         print(f'Запись с ID={record_id} успешно добавлена в таблицу "{table_name}".')
-    elif not matching_rows:
-        print("Подходящие записи не найдены.")
     else:
-        for row in matching_rows:
+        for row in matches:
             if command == "update":
                 print(
                     f'Запись с ID={row["ID"]} в таблице "{table_name}" '
@@ -148,6 +169,7 @@ def _execute_data_command(metadata, parsed):
 
 def run():
     """Read commands and persist successful schema and row operations."""
+    clear_select_cache()
     print_help()
 
     while True:

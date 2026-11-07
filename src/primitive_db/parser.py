@@ -9,6 +9,7 @@ _INTEGER = re.compile(r"[+-]?[0-9]+")
 
 
 def _tokenize(text):
+    """Split syntax outside quoted strings without discarding quotation marks."""
     tokens = []
     position = 0
     while position < len(text):
@@ -23,6 +24,7 @@ def _tokenize(text):
 
 
 def _string(token):
+    """Decode a quoted string literal and reject invalid escapes."""
     try:
         with warnings.catch_warnings():
             warnings.simplefilter("error", SyntaxWarning)
@@ -35,6 +37,7 @@ def _string(token):
 
 
 def _identifier(token):
+    """Read a nonempty identifier, allowing quoted names with spaces."""
     value = _string(token) if token.startswith(('"', "'")) else token
     if not value.strip() or token in {"(", ")", ",", "="}:
         raise ValueError(token)
@@ -42,6 +45,7 @@ def _identifier(token):
 
 
 def _value(token):
+    """Parse a quoted string, signed integer, or lowercase boolean literal."""
     if token.startswith(('"', "'")):
         return _string(token)
     if _INTEGER.fullmatch(token):
@@ -52,6 +56,7 @@ def _value(token):
 
 
 def _values(tokens):
+    """Read alternating values and commas inside a pair of parentheses."""
     if len(tokens) < 2 or tokens[0] != "(" or tokens[-1] != ")":
         raise ValueError("значения должны быть в круглых скобках")
     contents = tokens[1:-1]
@@ -68,6 +73,7 @@ def parse_values(text):
 
 
 def _clause(tokens):
+    """Read the three tokens of a single column = literal expression."""
     if len(tokens) != 3 or tokens[1] != "=":
         raise ValueError("требуется одно выражение столбец = значение")
     return {_identifier(tokens[0]): _value(tokens[2])}
@@ -91,6 +97,7 @@ def parse_command(text):
     command = tokens[0]
 
     if command == "insert" and len(tokens) >= 6:
+        # insert into TABLE values (...): values begin at index 4.
         if tokens[1] == "into" and tokens[3] == "values":
             return {
                 "command": command,
@@ -98,6 +105,7 @@ def parse_command(text):
                 "values": _values(tokens[4:]),
             }
     elif command == "select" and len(tokens) in {3, 7}:
+        # select from TABLE optionally followed by where COLUMN = VALUE.
         if tokens[1] == "from" and (len(tokens) == 3 or tokens[3] == "where"):
             return {
                 "command": command,
@@ -105,6 +113,8 @@ def parse_command(text):
                 "where_clause": _clause(tokens[4:]) if len(tokens) == 7 else None,
             }
     elif command == "update" and len(tokens) == 10:
+        # update TABLE set COLUMN = VALUE where COLUMN = VALUE.
+        # SET occupies tokens 3:6 and WHERE occupies tokens 7:10.
         if tokens[2] == "set" and tokens[6] == "where":
             return {
                 "command": command,
@@ -113,6 +123,7 @@ def parse_command(text):
                 "where_clause": _clause(tokens[7:]),
             }
     elif command == "delete" and len(tokens) == 7:
+        # delete from TABLE where COLUMN = VALUE: the clause starts at 4.
         if tokens[1] == "from" and tokens[3] == "where":
             return {
                 "command": command,

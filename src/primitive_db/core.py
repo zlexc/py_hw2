@@ -66,6 +66,7 @@ def insert(metadata, table_name, values, table_data=None):
 
 
 def _matches(row, where_clause):
+    """Match every equality using both its value and exact Python type."""
     return all(
         name in row and type(row[name]) is type(value) and row[name] == value
         for name, value in where_clause.items()
@@ -82,6 +83,7 @@ def matching_rows(table_data, where_clause=None):
 
 
 def _select_key(table_data, where_clause):
+    """Snapshot rows and the condition without conflating bool and int."""
     rows = tuple(
         tuple((name, type(value), value) for name, value in row.items())
         for row in table_data

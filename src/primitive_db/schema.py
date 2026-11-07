@@ -1,4 +1,4 @@
-SUPPORTED_TYPES = {"int": int, "str": str, "bool": bool}
+from primitive_db.constants import SUPPORTED_TYPES
 
 
 def normalize_columns(columns):

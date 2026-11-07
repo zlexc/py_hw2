@@ -7,6 +7,7 @@ def handle_db_errors(func):
 
     @wraps(func)
     def wrapper(*args, **kwargs):
+        """Report a failed operation while preserving successful return values."""
         try:
             return func(*args, **kwargs)
         except FileNotFoundError:
@@ -31,8 +32,11 @@ def confirm_action(action_name):
     """Require an explicit lowercase y before calling a destructive function."""
 
     def decorate(func):
+        """Attach the named confirmation to one destructive operation."""
+
         @wraps(func)
         def wrapper(*args, **kwargs):
+            """Execute only after an explicit affirmative response."""
             try:
                 answer = input(
                     f'Вы уверены, что хотите выполнить "{action_name}"? [y/n]: '
@@ -55,6 +59,7 @@ def log_time(func):
 
     @wraps(func)
     def wrapper(*args, **kwargs):
+        """Measure a successful call without changing its result."""
         started = time.monotonic()
         result = func(*args, **kwargs)
         elapsed = time.monotonic() - started
@@ -69,6 +74,7 @@ def create_cacher():
     cache = {}
 
     def cache_result(key, value_func):
+        """Reuse an existing result or compute and store a new one."""
         if key in cache:
             print("Результат получен из кэша.")
             return cache[key]

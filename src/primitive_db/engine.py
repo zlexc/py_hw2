@@ -3,6 +3,7 @@ import shlex
 import prompt
 from prettytable import PrettyTable
 
+from primitive_db.constants import CRUD_COMMANDS, METADATA_FILE
 from primitive_db.core import (
     clear_select_cache,
     create_table,
@@ -24,11 +25,9 @@ from primitive_db.utils import (
     save_table_data,
 )
 
-METADATA_FILE = "db_meta.json"
-CRUD_COMMANDS = {"insert", "select", "update", "delete", "info"}
-
 
 def print_help():
+    """Show schema commands, CRUD syntax, and general commands."""
     print("\n***Процесс работы с таблицей***")
     print("Функции:")
     print("<command> create_table <имя_таблицы> <столбец1:тип> .. - создать таблицу")
@@ -48,6 +47,7 @@ def print_help():
 
 
 def _execute_table_command(metadata, command, arguments):
+    """Persist schema changes and restore the schema if data deletion fails."""
     table_name = arguments[0]
     if command == "drop_table" and table_name not in metadata:
         print(f'Ошибка: Таблица "{table_name}" не существует.')
@@ -85,6 +85,7 @@ def _execute_table_command(metadata, command, arguments):
 
 @handle_db_errors
 def _validate_data_clauses(columns, parsed):
+    """Validate typed conditions and assignments before accessing row files."""
     where_clause = parsed.get("where_clause")
     if where_clause is not None:
         validate_clause(columns, where_clause)
@@ -94,6 +95,7 @@ def _validate_data_clauses(columns, parsed):
 
 
 def _execute_data_command(metadata, parsed):
+    """Load validated rows, execute CRUD, and persist successful changes."""
     command = parsed["command"]
     table_name = parsed["table_name"]
     if table_name not in metadata:

@@ -3,20 +3,31 @@
 Консольная база данных на Python в процедурном стиле. Устанавливаемый пакет
 называется `primitive_db`; команды `database` и `project` запускают один интерфейс.
 
-Требуются Python 3.12 и uv версии 0.5 или выше.
+Требуются Python 3.12, uv версии 0.5 или выше и Make.
 
 ## Запуск
 
 После клонирования репозитория выполняйте команды из его корневой директории:
 
 ```sh
-uv sync
-uv run database
+make install
+make run
 ```
 
-Также доступны совместимая команда из первого этапа и запуск модуля:
+Основные проверки перед сдачей:
 
 ```sh
+make lint
+make check
+```
+
+Проект использует uv согласно разделу 1 задания. Makefile вызывает uv;
+упоминания Poetry в финальном чек-листе относятся к прежнему варианту инструкции.
+Прямые команды uv также доступны:
+
+```sh
+uv sync --locked
+uv run --locked database
 uv run project
 uv run python -m primitive_db.main
 ```
@@ -229,12 +240,33 @@ uv run python -m primitive_db.main
 ## Проверка качества и сборка
 
 ```sh
-uv run python -m unittest discover -s tests -v
-uv run ruff check .
-uv run ruff format --check .
-uv build
+make check
+make build
 uvx twine check dist/*
 ```
+
+| Цель Make | Назначение |
+| --- | --- |
+| `install` | Установить пакет и зависимости из lockfile |
+| `run` | Запустить `database` |
+| `lint` | Выполнить Ruff |
+| `format-check` | Проверить форматирование без изменения файлов |
+| `test` | Запустить 103 процедурных теста |
+| `check` | Выполнить линтер, проверку форматирования и тесты |
+| `build` | Собрать wheel и исходный архив |
+
+Тесты — функции `test_*`, без определений классов. Стандартный `unittest`
+обнаруживает их через `load_tests` и библиотечный адаптер `FunctionTestCase`.
+Общие фикстуры используют `contextlib.ExitStack`, временные директории и mock,
+поэтому тестовые базы изолированы и очищаются после проверок. Сохранен прямой запуск:
+
+```sh
+uv run --locked python -m unittest discover -s tests -v
+```
+
+GitHub Actions запускает установку, `make check`, сборку и Twine при каждом push
+и pull request на Python 3.12. Workflow имеет только разрешение чтения репозитория.
+Ruff находится в dev-группе, `prompt` и `prettytable` — в зависимостях приложения.
 
 Сборка создает wheel и исходный архив в `dist/`. Twine проверяет метаданные
 локально; публикация на PyPI не требуется.
@@ -242,7 +274,7 @@ uvx twine check dist/*
 ## Установка собранного пакета
 
 ```sh
-uv tool install dist/primitive_db-0.4.0-py3-none-any.whl
+uv tool install dist/primitive_db-0.5.0-py3-none-any.whl
 database
 ```
 
@@ -251,31 +283,59 @@ database
 и перезапустите терминал. Для повторной установки используйте:
 
 ```sh
-uv tool install --force dist/primitive_db-0.4.0-py3-none-any.whl
+uv tool install --force dist/primitive_db-0.5.0-py3-none-any.whl
 ```
 
-## Текущий этап
+## Готовность к сдаче
 
-Выполнены разделы 1–4: устанавливаемый пакет, цикл команд через `prompt`,
+Выполнены разделы 1–5: устанавливаемый пакет, цикл команд через `prompt`,
 управление схемами таблиц, полный CRUD, хранение в JSON, декораторы и замыкания.
-Вывод строк оформлен через PrettyTable. Текущая версия пакета — `0.4.0`.
+Добавлены процедурные тесты, Makefile и CI. Вывод строк оформлен через PrettyTable.
+Текущая версия пакета — `0.5.0`.
 Начальная версия с сообщением `DB project is running!` сохранена в истории Git.
 
 - `src/primitive_db/__init__.py` — пустой маркер пакета.
 - `src/primitive_db/main.py` — точка входа с шебангом и функцией `main()`.
+- `src/primitive_db/constants.py` — общие настройки, типы и набор команд.
 - `src/primitive_db/engine.py` — справка, разбор команд и цикл программы.
 - `src/primitive_db/core.py` — создание и удаление таблиц, CRUD-функции.
 - `src/primitive_db/decorators.py` — обработка ошибок, подтверждения, время и кэшер.
 - `src/primitive_db/schema.py` — общие проверки схем, условий и строк.
 - `src/primitive_db/parser.py` — разбор CRUD-команд и типизированных литералов.
 - `src/primitive_db/utils.py` — загрузка и сохранение JSON.
-- `tests/` — проверки через стандартный `unittest`, без новых зависимостей.
+- `tests/` — функции тестов и общие процедурные помощники, без новых зависимостей.
+- `Makefile` — установка, запуск, проверки и сборка.
+- `.github/workflows/checks.yml` — автоматические проверки GitHub Actions.
 - `pyproject.toml`, `.python-version`, `uv.lock` — настройки и зависимости.
 - `.gitignore` — исключения для окружения, кешей и результатов сборки.
 
 Репозиторий: https://github.com/zlexc/py_hw2.
 
-## Демонстрация управления таблицами
+Финализация выполняется через ветку `chore/final-check` и pull request по GitHub Flow.
+История предыдущих этапов сохраняется. Доступные локальные и CI-проверки не заменяют
+скрытые проверки учебной платформы; результат приемки определяет проверяющий.
+
+## Полный сценарий для сдачи
+
+[![asciicast](https://asciinema.org/a/7HftNT2aazfkQtYH.svg)](https://asciinema.org/a/7HftNT2aazfkQtYH)
+
+Запись версии `0.5.0` показывает установку wheel и полный жизненный цикл БД:
+запуск, создание таблицы, добавление, чтение, обновление и повторное чтение строк,
+перезапуск с сохраненными данными, выборку из кэша, удаление записи и таблицы
+с подтверждениями. Запись опубликована в аккаунте **awooga**.
+
+Локальная копия — [demo_submission.cast](demo_submission.cast):
+
+```sh
+uvx asciinema play demo_submission.cast
+```
+
+## История демонстраций
+
+<details>
+<summary>Записи предыдущих этапов</summary>
+
+### Управление таблицами
 
 [![asciicast](https://asciinema.org/a/DjsuqfbcC6MrCCKc.svg)](https://asciinema.org/a/DjsuqfbcC6MrCCKc)
 
@@ -292,7 +352,7 @@ uvx asciinema play demo.cast
 
 Asciinema используется отдельно от зависимостей приложения.
 
-## Демонстрация CRUD
+### CRUD
 
 [![asciicast](https://asciinema.org/a/16849YoGhi3jwIaD.svg)](https://asciinema.org/a/16849YoGhi3jwIaD)
 
@@ -307,7 +367,7 @@ Asciinema используется отдельно от зависимосте�
 uvx asciinema play demo_crud.cast
 ```
 
-## Финальная демонстрация: декораторы и замыкания
+### Декораторы и замыкания
 
 [![asciicast](https://asciinema.org/a/bG1MPobz7E01Hvxn.svg)](https://asciinema.org/a/bG1MPobz7E01Hvxn)
 
@@ -322,3 +382,5 @@ uvx asciinema play demo_crud.cast
 ```sh
 uvx asciinema play demo_final.cast
 ```
+
+</details>

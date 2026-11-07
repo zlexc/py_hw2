@@ -2,12 +2,12 @@ import json
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
+from primitive_db.constants import DATA_DIR, SAFE_FILENAME_BYTES
 from primitive_db.schema import normalize_columns
-
-DATA_DIR = Path("data")
 
 
 def _load_json(filepath, default):
+    """Read JSON, using the supplied default only when the file is missing."""
     try:
         with open(filepath, encoding="utf-8") as stream:
             return json.load(stream)
@@ -58,9 +58,8 @@ def _save_json(filepath, data):
 
 def table_data_path(table_name):
     """Encode names as distinct filenames, even on case-insensitive systems."""
-    safe = b"abcdefghijklmnopqrstuvwxyz0123456789_-"
     filename = "".join(
-        chr(byte) if byte in safe else f"%{byte:02X}"
+        chr(byte) if byte in SAFE_FILENAME_BYTES else f"%{byte:02X}"
         for byte in table_name.encode("utf-8")
     )
     return DATA_DIR / f"{filename}.json"

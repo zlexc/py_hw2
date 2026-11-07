@@ -140,3 +140,20 @@ uv tool install --force dist/primitive_db-0.2.0-py3-none-any.whl
 - `.gitignore` — исключения для окружения, кешей и результатов сборки.
 
 Репозиторий: https://github.com/zlexc/py_hw2.
+
+## Демонстрация
+
+[![asciicast](https://asciinema.org/a/DjsuqfbcC6MrCCKc.svg)](https://asciinema.org/a/DjsuqfbcC6MrCCKc)
+
+Запись показывает установку wheel как CLI-инструмента, запуск `database`,
+создание и просмотр таблицы, повторный запуск с сохраненной структурой,
+проверку повторного создания и удаление таблицы.
+
+Локальная копия записи — [demo.cast](demo.cast). Ее можно воспроизвести без
+обращения к сервису (после загрузки самого инструмента):
+
+```sh
+uvx asciinema play demo.cast
+```
+
+Asciinema используется отдельно от зависимостей приложения.

@@ -95,7 +95,7 @@ uv run python -m primitive_db.main
 +----+--------+-----+-----------+
 | ID |  name  | age | is_active |
 +----+--------+-----+-----------+
-| 1  | Sergei | 28  |    True   |
+| 1  | Sergei |  28 |    True   |
 +----+--------+-----+-----------+
 >>>Введите команду: update users set age = 29 where name = "Sergei"
 Запись с ID=1 в таблице "users" успешно обновлена.
@@ -232,3 +232,18 @@ uvx asciinema play demo.cast
 ```
 
 Asciinema используется отдельно от зависимостей приложения.
+
+## Демонстрация CRUD
+
+[![asciicast](https://asciinema.org/a/16849YoGhi3jwIaD.svg)](https://asciinema.org/a/16849YoGhi3jwIaD)
+
+Запись для версии `0.3.0` показывает установку wheel, создание таблицы,
+добавление двух записей, выборку по условию и без него, обновление всех
+совпадений, `info`, повторный запуск с сохраненными строками и их удаление.
+Запись опубликована в аккаунте **awooga**.
+
+Локальная копия — [demo_crud.cast](demo_crud.cast):
+
+```sh
+uvx asciinema play demo_crud.cast
+```

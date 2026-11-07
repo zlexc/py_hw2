@@ -1,29 +1,6 @@
-SUPPORTED_TYPES = {"int", "str", "bool"}
-
-
-def normalize_columns(columns):
-    """Validate column definitions and put the unique ID column first."""
-    if not columns:
-        raise ValueError("столбцы не заданы")
-
-    names = set()
-    normalized = ["ID:int"]
-    for column in columns:
-        if not isinstance(column, str) or column.count(":") != 1:
-            raise ValueError(column)
-        name, data_type = column.split(":")
-        if (
-            not name.strip()
-            or name in names
-            or data_type not in SUPPORTED_TYPES
-            or (name == "ID" and data_type != "int")
-        ):
-            raise ValueError(column)
-        names.add(name)
-        if name != "ID":
-            normalized.append(column)
-
-    return normalized
+from primitive_db.schema import column_types, validate_table_data
+from primitive_db.schema import normalize_columns as normalize_columns
+from primitive_db.utils import load_table_data
 
 
 def create_table(metadata, table_name, columns):
@@ -53,3 +30,56 @@ def drop_table(metadata, table_name):
 
     del metadata[table_name]
     return metadata
+
+
+def insert(metadata, table_name, values, table_data=None):
+    """Return rows with a new, schema-checked record and an automatic ID."""
+    if table_name not in metadata:
+        raise ValueError(f'Таблица "{table_name}" не существует')
+    types = column_types(metadata[table_name])
+    value_columns = [name for name in types if name != "ID"]
+    if len(values) != len(value_columns):
+        raise ValueError(
+            f"ожидается значений: {len(value_columns)}, получено: {len(values)}"
+        )
+    for name, value in zip(value_columns, values):
+        if type(value) is not types[name]:
+            raise ValueError(f"{name}={value!r}")
+
+    if table_data is None:
+        table_data = load_table_data(table_name)
+    validate_table_data(metadata[table_name], table_data)
+    next_id = max((row["ID"] for row in table_data), default=0) + 1
+    record = {"ID": next_id, **dict(zip(value_columns, values))}
+    return [row.copy() for row in table_data] + [record]
+
+
+def _matches(row, where_clause):
+    return all(
+        name in row and type(row[name]) is type(value) and row[name] == value
+        for name, value in where_clause.items()
+    )
+
+
+def select(table_data, where_clause=None):
+    """Return copies of all rows, or only those matching the equality."""
+    return [
+        row.copy()
+        for row in table_data
+        if where_clause is None or _matches(row, where_clause)
+    ]
+
+
+def update(table_data, set_clause, where_clause):
+    """Update matching rows without modifying the input or primary keys."""
+    if "ID" in set_clause:
+        raise ValueError("ID доступен только для чтения")
+    return [
+        {**row, **set_clause} if _matches(row, where_clause) else row.copy()
+        for row in table_data
+    ]
+
+
+def delete(table_data, where_clause):
+    """Return copies of rows that do not match the equality."""
+    return [row.copy() for row in table_data if not _matches(row, where_clause)]

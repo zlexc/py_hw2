@@ -14,3 +14,4 @@ wheels/
 
 # Local database metadata
 db_meta.json
+data/

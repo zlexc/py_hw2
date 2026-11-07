@@ -1,11 +1,21 @@
 import shlex
 
 import prompt
+from prettytable import PrettyTable
 
-from primitive_db.core import create_table, drop_table
-from primitive_db.utils import load_metadata, save_metadata
+from primitive_db.core import create_table, delete, drop_table, insert, select, update
+from primitive_db.parser import parse_command
+from primitive_db.schema import column_types, validate_clause, validate_table_data
+from primitive_db.utils import (
+    delete_table_data,
+    load_metadata,
+    load_table_data,
+    save_metadata,
+    save_table_data,
+)
 
 METADATA_FILE = "db_meta.json"
+CRUD_COMMANDS = {"insert", "select", "update", "delete", "info"}
 
 
 def print_help():
@@ -14,13 +24,130 @@ def print_help():
     print("<command> create_table <имя_таблицы> <столбец1:тип> .. - создать таблицу")
     print("<command> list_tables - показать список всех таблиц")
     print("<command> drop_table <имя_таблицы> - удалить таблицу")
+    print("\n***Операции с данными***")
+    print("insert into <имя_таблицы> values (<значение1>, ...) - создать запись")
+    print("select from <имя_таблицы> [where <столбец> = <значение>] - прочитать записи")
+    print(
+        "update <имя_таблицы> set <столбец> = <значение> where <столбец> = <значение>"
+    )
+    print("delete from <имя_таблицы> where <столбец> = <значение> - удалить записи")
+    print("info <имя_таблицы> - информация о таблице")
     print("\nОбщие команды:")
     print("<command> exit - выход из программы")
     print("<command> help - справочная информация\n")
 
 
+def _execute_table_command(metadata, command, arguments):
+    table_name = arguments[0]
+    previous_metadata = metadata.copy()
+    if command == "create_table":
+        create_table(metadata, table_name, arguments[1:])
+    else:
+        drop_table(metadata, table_name)
+    if metadata == previous_metadata:
+        return 0
+
+    try:
+        if command == "create_table":
+            save_table_data(table_name, [])
+        save_metadata(METADATA_FILE, metadata)
+        if command == "drop_table":
+            try:
+                delete_table_data(table_name)
+            except OSError:
+                save_metadata(METADATA_FILE, previous_metadata)
+                raise
+    except (OSError, ValueError) as error:
+        print(f"Ошибка: не удалось сохранить метаданные или данные таблицы: {error}")
+        return 1
+
+    if command == "create_table":
+        columns = ", ".join(metadata[table_name])
+        print(f'Таблица "{table_name}" успешно создана со столбцами: {columns}')
+    else:
+        print(f'Таблица "{table_name}" успешно удалена.')
+    return 0
+
+
+def _execute_data_command(metadata, parsed):
+    command = parsed["command"]
+    table_name = parsed["table_name"]
+    if table_name not in metadata:
+        print(f'Ошибка: Таблица "{table_name}" не существует.')
+        return 0
+    columns = metadata[table_name]
+    where_clause = parsed.get("where_clause")
+    try:
+        if where_clause is not None:
+            validate_clause(columns, where_clause)
+        if command == "update":
+            validate_clause(columns, parsed["set_clause"], allow_id=False)
+    except ValueError as error:
+        print(f"Некорректное значение: {error}. Попробуйте снова.")
+        return 0
+
+    try:
+        table_data = load_table_data(table_name)
+        validate_table_data(columns, table_data)
+    except (OSError, ValueError) as error:
+        print(f'Ошибка: не удалось загрузить данные таблицы "{table_name}": {error}')
+        return 1
+
+    if command == "info":
+        print(f"Таблица: {table_name}")
+        print(f"Столбцы: {', '.join(columns)}")
+        print(f"Количество записей: {len(table_data)}")
+        return 0
+    if command == "select":
+        table = PrettyTable(field_names=list(column_types(columns)))
+        for row in select(table_data, where_clause):
+            table.add_row([row[name] for name in table.field_names])
+        print(table)
+        return 0
+
+    matching_rows = select(table_data, where_clause)
+    try:
+        if command == "insert":
+            result = insert(metadata, table_name, parsed["values"], table_data)
+        elif command == "update":
+            result = update(table_data, parsed["set_clause"], where_clause)
+        else:
+            result = delete(table_data, where_clause)
+    except ValueError as error:
+        print(f"Некорректное значение: {error}. Попробуйте снова.")
+        return 0
+
+    if result != table_data:
+        try:
+            save_table_data(table_name, result)
+        except (OSError, ValueError) as error:
+            print(
+                f'Ошибка: не удалось сохранить данные таблицы "{table_name}": {error}'
+            )
+            return 1
+
+    if command == "insert":
+        record_id = result[-1]["ID"]
+        print(f'Запись с ID={record_id} успешно добавлена в таблицу "{table_name}".')
+    elif not matching_rows:
+        print("Подходящие записи не найдены.")
+    else:
+        for row in matching_rows:
+            if command == "update":
+                print(
+                    f'Запись с ID={row["ID"]} в таблице "{table_name}" '
+                    "успешно обновлена."
+                )
+            else:
+                print(
+                    f"Запись с ID={row['ID']} успешно удалена "
+                    f'из таблицы "{table_name}".'
+                )
+    return 0
+
+
 def run():
-    """Read commands and persist successful table operations."""
+    """Read commands and persist successful schema and row operations."""
     print_help()
 
     while True:
@@ -35,6 +162,17 @@ def run():
         except (EOFError, KeyboardInterrupt):
             print()
             return 0
+
+        first_word = user_input.split(maxsplit=1)
+        if first_word and first_word[0] in CRUD_COMMANDS:
+            try:
+                parsed = parse_command(user_input)
+            except ValueError as error:
+                print(f"Некорректное значение: {error}. Попробуйте снова.")
+                continue
+            if _execute_data_command(metadata, parsed):
+                return 1
+            continue
 
         try:
             tokens = shlex.split(user_input)
@@ -69,23 +207,5 @@ def run():
             print(f"Некорректное значение: {user_input}. Попробуйте снова.")
             continue
 
-        table_name = arguments[0]
-        previous_metadata = metadata.copy()
-        if command == "create_table":
-            create_table(metadata, table_name, arguments[1:])
-        else:
-            drop_table(metadata, table_name)
-        if metadata == previous_metadata:
-            continue
-
-        try:
-            save_metadata(METADATA_FILE, metadata)
-        except (OSError, ValueError) as error:
-            print(f"Ошибка: не удалось сохранить метаданные: {error}")
+        if _execute_table_command(metadata, command, arguments):
             return 1
-
-        if command == "create_table":
-            columns = ", ".join(metadata[table_name])
-            print(f'Таблица "{table_name}" успешно создана со столбцами: {columns}')
-        else:
-            print(f'Таблица "{table_name}" успешно удалена.')

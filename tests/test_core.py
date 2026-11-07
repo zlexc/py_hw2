@@ -2,8 +2,9 @@ import copy
 import io
 import unittest
 from contextlib import redirect_stdout
+from unittest.mock import patch
 
-from primitive_db.core import create_table, drop_table
+from primitive_db.core import create_table, delete, drop_table, insert, select, update
 
 
 class TableTests(unittest.TestCase):
@@ -86,3 +87,88 @@ class TableTests(unittest.TestCase):
         self.assertEqual(
             output.getvalue(), 'Ошибка: Таблица "products" не существует.\n'
         )
+
+
+class CrudTests(unittest.TestCase):
+    def setUp(self):
+        self.metadata = {"users": ["ID:int", "name:str", "age:int", "is_active:bool"]}
+        self.rows = [
+            {"ID": 1, "name": "Sergei", "age": 28, "is_active": True},
+            {"ID": 3, "name": "Ann", "age": 28, "is_active": False},
+        ]
+        self.original = copy.deepcopy(self.rows)
+
+    def test_insert_uses_max_id_and_does_not_mutate_input(self):
+        result = insert(self.metadata, "users", ["Nina", -2, False], self.rows)
+        self.assertEqual(
+            result[-1], {"ID": 4, "name": "Nina", "age": -2, "is_active": False}
+        )
+        self.assertEqual(self.rows, self.original)
+
+    def test_three_argument_insert_loads_existing_rows(self):
+        with patch("primitive_db.core.load_table_data", return_value=self.rows) as load:
+            result = insert(self.metadata, "users", ["Nina", 30, True])
+        load.assert_called_once_with("users")
+        self.assertEqual(result[-1]["ID"], 4)
+
+    def test_empty_table_and_id_only_table(self):
+        self.assertEqual(insert({"ids": ["ID:int"]}, "ids", [], []), [{"ID": 1}])
+        result = insert(self.metadata, "users", ["", 0, False], [])
+        self.assertEqual(result[-1]["ID"], 1)
+        self.assertEqual(result[-1]["name"], "")
+
+    def test_invalid_insert_values_do_not_change_rows(self):
+        for values in (
+            ["Sergei", "28", True],
+            ["Sergei", True, True],
+            ["Sergei", 28, 1],
+            [28, 28, True],
+            ["Sergei", 28],
+            [1, "Sergei", 28, True],
+            ["Sergei", None, True],
+        ):
+            with self.subTest(values=values), self.assertRaises(ValueError):
+                insert(self.metadata, "users", values, self.rows)
+            self.assertEqual(self.rows, self.original)
+
+    def test_missing_table_is_rejected(self):
+        with self.assertRaises(ValueError):
+            insert(self.metadata, "missing", [], [])
+
+    def test_invalid_existing_rows_are_rejected(self):
+        with self.assertRaises(ValueError):
+            insert(self.metadata, "users", ["Nina", 30, True], [{"ID": True}])
+
+    def test_select_all_and_exact_type_equality(self):
+        result = select(self.rows)
+        self.assertEqual(result, self.rows)
+        result[0]["name"] = "Changed"
+        self.assertEqual(self.rows, self.original)
+        self.assertEqual(select(self.rows, {"ID": True}), [])
+        self.assertEqual(select(self.rows, {"age": "28"}), [])
+        self.assertEqual(select(self.rows, {"is_active": False}), [self.rows[1]])
+
+    def test_update_changes_all_matches_without_mutation(self):
+        result = update(self.rows, {"age": 29}, {"age": 28})
+        self.assertEqual([row["age"] for row in result], [29, 29])
+        self.assertEqual(self.rows, self.original)
+        self.assertEqual(update(self.rows, {"age": 29}, {"ID": 100}), self.rows)
+
+    def test_id_is_read_only(self):
+        with self.assertRaises(ValueError):
+            update(self.rows, {"ID": 2}, {"ID": 1})
+        self.assertEqual(self.rows, self.original)
+
+    def test_delete_changes_all_matches_without_mutation(self):
+        self.assertEqual(delete(self.rows, {"age": 28}), [])
+        self.assertEqual(delete(self.rows, {"ID": 1}), [self.rows[1]])
+        self.assertEqual(delete(self.rows, {"ID": 100}), self.rows)
+        self.assertEqual(self.rows, self.original)
+
+    def test_id_generation_after_deletion_cannot_collide(self):
+        remaining = delete(self.rows, {"ID": 1})
+        result = insert(self.metadata, "users", ["Nina", 30, True], remaining)
+        self.assertEqual(result[-1]["ID"], 4)
+        remaining = delete(self.rows, {"ID": 3})
+        result = insert(self.metadata, "users", ["Nina", 30, True], remaining)
+        self.assertEqual(result[-1]["ID"], 2)

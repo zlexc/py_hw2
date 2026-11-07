@@ -2,17 +2,22 @@ import json
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
-from primitive_db.core import normalize_columns
+from primitive_db.schema import normalize_columns
+
+DATA_DIR = Path("data")
+
+
+def _load_json(filepath, default):
+    try:
+        with open(filepath, encoding="utf-8") as stream:
+            return json.load(stream)
+    except FileNotFoundError:
+        return default
 
 
 def load_metadata(filepath):
     """Load table schemas; a missing file represents an empty database."""
-    try:
-        with open(filepath, encoding="utf-8") as stream:
-            metadata = json.load(stream)
-    except FileNotFoundError:
-        return {}
-
+    metadata = _load_json(filepath, {})
     if not isinstance(metadata, dict):
         raise ValueError("Метаданные должны быть JSON-объектом.")
     for table_name, columns in metadata.items():
@@ -26,6 +31,11 @@ def load_metadata(filepath):
 
 
 def save_metadata(filepath, data):
+    """Persist metadata using the same atomic writer as table data."""
+    _save_json(filepath, data)
+
+
+def _save_json(filepath, data):
     """Replace the JSON file only after the complete new version is written."""
     filepath = Path(filepath)
     temporary_path = None
@@ -44,3 +54,32 @@ def save_metadata(filepath, data):
     finally:
         if temporary_path is not None:
             temporary_path.unlink(missing_ok=True)
+
+
+def table_data_path(table_name):
+    """Encode names as distinct filenames, even on case-insensitive systems."""
+    safe = b"abcdefghijklmnopqrstuvwxyz0123456789_-"
+    filename = "".join(
+        chr(byte) if byte in safe else f"%{byte:02X}"
+        for byte in table_name.encode("utf-8")
+    )
+    return DATA_DIR / f"{filename}.json"
+
+
+def load_table_data(table_name):
+    """Load row dictionaries; the caller validates them against the schema."""
+    data = _load_json(table_data_path(table_name), [])
+    if not isinstance(data, list) or any(not isinstance(row, dict) for row in data):
+        raise ValueError("Данные таблицы должны быть массивом записей.")
+    return data
+
+
+def save_table_data(table_name, data):
+    """Create the data directory and atomically save a table's rows."""
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    _save_json(table_data_path(table_name), data)
+
+
+def delete_table_data(table_name):
+    """Remove only this table's encoded data file, if it exists."""
+    table_data_path(table_name).unlink(missing_ok=True)

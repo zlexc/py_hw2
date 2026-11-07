@@ -1,0 +1,17 @@
+[project]
+name = "primitive-db"
+version = "0.1.0"
+description = "A procedural console database for Python homework 2"
+readme = "README.md"
+authors = [
+    { name = "Fyodor Simonov", email = "fsimonov@dantebet.tech" }
+]
+requires-python = ">=3.12"
+dependencies = []
+
+[project.scripts]
+project = "primitive_db.main:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

@@ -11,3 +11,6 @@ wheels/
 
 # Ruff cache
 .ruff_cache/
+
+# Local database metadata
+db_meta.json

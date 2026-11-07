@@ -1,6 +1,6 @@
 [project]
 name = "primitive-db"
-version = "0.1.0"
+version = "0.2.0"
 description = "A procedural console database for Python homework 2"
 readme = "README.md"
 authors = [
@@ -12,6 +12,7 @@ dependencies = [
 ]
 
 [project.scripts]
+database = "primitive_db.main:main"
 project = "primitive_db.main:main"
 
 [build-system]
